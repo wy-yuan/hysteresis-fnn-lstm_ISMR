@@ -1,4 +1,7 @@
 # Byte-compiled / optimized / DLL files
+checkpoints/
+tendon_data/
+figures/
 __pycache__/
 *.py[cod]
 *$py.class
