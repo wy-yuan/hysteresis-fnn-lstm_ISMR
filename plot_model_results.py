@@ -30,11 +30,11 @@ def load_data(data_path, seg, sample_rate=100):
     freq = np.ones_like(tendon_disp, dtype=np.float32) * frequency
     return {'time': interp_time, 'tendon_disp': tendon_disp, 'tip_A': tip_A, 'freq': freq}
 
-def test_LSTM(pt_path, data_path, forward=True, fq=False, input_dim=1):
+def test_LSTM(pt_path, data_path, seg=50, sr=25, forward=True, fq=False, input_dim=1):
     device = "cuda"
     model = LSTMNet(inp_dim=input_dim, num_layers=2)
-    sr = 25
-    seg = 50
+    sr = sr
+    seg = seg
     model.load_state_dict(torch.load(pt_path, map_location=device))
     model.cuda()
     model.eval()
@@ -72,10 +72,10 @@ def test_LSTM(pt_path, data_path, forward=True, fq=False, input_dim=1):
     res_nrmse = res_rmse/(max(gt[rm_init_number:])-min(gt[rm_init_number:]))
     return input, gt, output, data['time'], res_rmse, res_nrmse
 
-def test_FNN(pt_path, data_path, seg=50, forward=True, fq=False, input_dim=1):
+def test_FNN(pt_path, data_path, seg=50, sr=25, forward=True, fq=False, input_dim=1):
     device = "cuda"
     model = FFNet(inp_dim=input_dim, hidden_dim=64, seg=seg)
-    sr = 25
+    sr = sr
     seg = seg
     model.load_state_dict(torch.load(pt_path, map_location=device))
     model.cuda()

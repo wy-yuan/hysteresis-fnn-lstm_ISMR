@@ -8,7 +8,8 @@ from train_TC import LSTMNet
 from train_TC import FFNet
 from matplotlib import pyplot as plt
 import os
-
+import time
+from torch.autograd import grad
 def rmse_norm(y1, y2):
     return np.linalg.norm(y1 - y2) / np.sqrt(len(y1))
 
@@ -71,9 +72,20 @@ def test_LSTM(pt_path, data_path, forward=True, fq=False, input_dim=1):
     res_nrmse = res_rmse/(max(gt)-min(gt))
     return input, gt, output, data['time'], res_rmse, res_nrmse
 
+def compute_gradient(model, input_array, hidden, seg=50):
+    # hidden = (torch.zeros(model.num_layers, 1, model.hidden_dim),
+    #           torch.zeros(model.num_layers, 1, model.hidden_dim))
+    # input_tensor = torch.randn(1, seg, requires_grad=True)
+    # input_tensor = torch.ones(1, seg, requires_grad=True)
+    input_tensor = torch.tensor(input_array, requires_grad=True)
+    output, _ = model(input_tensor, hidden)
+    # Calculate the contribution of each input (gradient of the loss with respect to the input)
+    contributions = grad(output[0, -1, 0], input_tensor)[0]
+    x = contributions.detach().cpu().numpy()[0]
+    # print(x.shape)
+    return x
 
 if __name__ == '__main__':
-    device = "cuda"
     path = "./checkpoints/TC_LSTM_45ca_seg50_lossall/TP_LSTM_L2_bs16_epoch168_best0.0003329007666325197.pt"
     path = "./checkpoints/test/TC_LSTM_45ca_fakedata_seg50_lossall_sr100/TP_LSTM_L2_bs16_epoch500.pt"
     path = "./checkpoints/TC_LSTM_45ca_threeTypeDecay_seg50_sr100_rsFalse_lr1e-3_loss1/TC_LSTM_L2_bs16_epoch76_best0.0005161732333164995.pt"
@@ -90,29 +102,58 @@ if __name__ == '__main__':
     # path = "./checkpoints/TC_LSTM_45ca_1rep_seg50_sr25_NOrsNOfq_loss10000_epoch500/TC_LSTM_L2_bs16_epoch258_best1.2960718440026353.pt"   # not bad, bad when freq is low
 
     # fq, input_dim = False, 1
-    path = "./checkpoints/FixValidateData_TC_LSTM_45ca_1rep_seg50_sr25_NOrsNOfq_loss10000_epoch500/TC_LSTM_L2_bs16_epoch248_best1.3202891629189253.pt"
-    path = "./checkpoints/FixValidateData_Inverse_TC_LSTM_45ca_1rep_seg50_sr25_NOrsNOfq_loss10000_epoch500/TC_LSTM_L2_bs16_epoch352_best2.2775139451026916.pt"
+    path = "../hysteresis_ISMR/checkpoints/FixValidateData_TC_LSTM_45ca_1rep_seg50_sr25_NOrsNOfq_loss10000_epoch500/TC_LSTM_L2_bs16_epoch248_best1.3202891629189253.pt"
+    # path = "./checkpoints/FixValidateData_Inverse_TC_LSTM_45ca_1rep_seg50_sr25_NOrsNOfq_loss10000_epoch500/TC_LSTM_L2_bs16_epoch352_best2.2775139451026916.pt"
 
     # fq, input_dim = True, 2
-    path = "./checkpoints/FixValidateData_TC_LSTM_45ca_1rep_seg50_sr100_rsFreq_loss10000_epoch500/TC_LSTM_L2_bs16_epoch425_best1.3930550070564731.pt"
+    # path = "../hysteresis_ISMR/checkpoints/FixValidateData_TC_LSTM_45ca_1rep_seg50_sr100_rsFreq_loss10000_epoch500/TC_LSTM_L2_bs16_epoch425_best1.3930550070564731.pt"
     # path = "./checkpoints/FixValidateData_Inverse_TC_LSTM_45ca_1rep_seg50_sr100_rsFreq_loss10000_epoch500/TC_LSTM_L2_bs16_epoch363_best2.370356702337078.pt"
+
+    # path = "./checkpoints/LSTM_45ca1rep_seg50_sr25_NOrsNOfq_loss1_NOwd/TC_LSTM_L2_bs16_epoch371_best0.00012022016062473995.pt"
+    # path = "./checkpoints/LSTM_45ca4rep_seg50_sr25_NOrsNOfq_NOwd/TC_LSTM_L2_bs16_epoch100_best0.00010517176146020142.pt"
+
+    path = "./checkpoints/LSTM_Train135Hz1rep_seg50_sr25_NOrsNOfq/TC_LSTM_L2_bs16_epoch446_best0.00010628091521853815.pt"
+    # path = "./checkpoints/LSTM_Train135Hz3rep_seg50_sr25_NOrsNOfq/TC_LSTM_L2_bs16_epoch430_best7.390102776035093e-05.pt"
+    path = "./checkpoints/LSTM_Train135Hz1rep_seg50_sr25_NOrsNOfq_TCdataset/TC_LSTM_L2_bs16_epoch426_best0.00012053733629829503.pt"
+    path = "./checkpoints/LSTM_Train135Hz3rep_seg50_sr25_NOrsNOfq_TCdataset/TC_LSTM_L2_bs16_epoch495_best8.714309888516518e-05.pt"
+
+    #  different window size
+    path = "./checkpoints/Train12345Hz1rep_LSTM_seg2_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch385_best0.0009705254304532141.pt"
+    path = "./checkpoints/Train12345Hz1rep_LSTM_seg10_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch429_best0.0004312794906606733.pt"
+    # path = "./checkpoints/Train12345Hz1rep_LSTM_seg20_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch494_best0.00024159783231807034.pt"
+    # path = "./checkpoints/Train12345Hz1rep_LSTM_seg30_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch483_best0.000176327922231123.pt"
+    # path = "./checkpoints/Train12345Hz1rep_LSTM_seg40_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch495_best0.00013250087551185921.pt"
+    path = "./checkpoints/Train12345Hz1rep_LSTM_seg50_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch488_best0.00010981084632440833.pt"
+    path = "./checkpoints/Train12345Hz1rep_LSTM_seg100_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch451_best6.0820018704244984e-05.pt"
+
+    #  different sampling rate
+    # path = "./checkpoints/Train12345Hz1rep_LSTM_seg50_sr10_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch449_best8.010477757858071e-05.pt"
+    # path = "./checkpoints/Train12345Hz1rep_LSTM_seg50_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch488_best0.00010981084632440833.pt"
+    # path = "./checkpoints/Train12345Hz1rep_LSTM_seg50_sr50_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch468_best0.00016143671042987854.pt"
+    # path = "./checkpoints/Train12345Hz1rep_LSTM_seg50_sr100_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch377_best0.0002389827078441652.pt"
 
     forward = True
     pos1 = 0
     sr = 25
-    # fq, input_dim = False, 1
-    fq, input_dim = True, 2
+    fq, input_dim = False, 1
+    act = None
+    # fq, input_dim = True, 2
     # load trained model
-    model = LSTMNet(inp_dim=input_dim, num_layers=2)
+    device = "cpu"
+    model = LSTMNet(inp_dim=input_dim, num_layers=2, act=act)
     model.load_state_dict(torch.load(path, map_location=device))
-    model.cuda()
+    # model.cuda()
     model.eval()
 
-    seg = 50
+    seg = 100
     # load data
-    path = "./tendon_data/45ca_threeTypeDecay/validate/0BL_045Hz_repn.txt"
-    # path = "./tendon_data/45ca_threeTypeDecay/train/EndBL_01hz_rep2.txt"
-    # path = "./tendon_data/45ca/validate/0_1hz_rep5.txt"
+    path = "./tendon_data/45ca_1rep/test/0BL_015Hz_repn.txt"
+    # path = "./tendon_data/Train135Hz_1rep/train/0BL_01hz_rep2.txt"
+    # path = "./tendon_data/Train135Hz_1rep/validate/EndBL_01hz_rep5.txt"
+    # path = "./tendon_data/Train135Hz_1rep/validate/0BL_03hz_rep4.txt"
+    # path = "./tendon_data/Train135Hz_1rep/validate/0BL_05Hz_rep4.txt"
+    # path = "./tendon_data/Train135Hz_1rep/test/0BL_02Hz_rep1.txt"
+    # path = "./tendon_data/Train135Hz_1rep/test/0BL_04hz_rep2.txt"
     data_path = os.path.join(path)
     data = load_data(data_path, seg, sample_rate=sr)
 
@@ -130,17 +171,50 @@ if __name__ == '__main__':
     hidden = (torch.zeros(model.num_layers, 1, model.hidden_dim).to(device),
               torch.zeros(model.num_layers, 1, model.hidden_dim).to(device))
     h_ = hidden
+    torch.cuda.synchronize()
+    start_time = time.time()
+    t = 0
+    cg = 0
     for i in range(data['tendon_disp'].shape[0]):
+        # if i >= seg and i < data['tendon_disp'].shape[0]-seg:
+        if i == 100:
+            contribute = (compute_gradient(model, np.array([joints[i:i + seg, 0:input_dim]]), hidden, seg=seg))
+            cg += np.abs(contribute)
         joint = joints[i:i + 1, 0:input_dim]
         if pos1 == 1:
             input_ = np.hstack([joint, pre_pos])  # freq
         else:
-            input_ = joint
-        output, h_ = model(torch.tensor([input_]).to(device), h_)
+            input_ = np.array([joint])
+        torch.cuda.synchronize()
+        st = time.time()
+        input_device = torch.tensor(input_).to(device)
+        output, h_ = model(input_device, h_)
         pre_pos = output.detach().cpu().numpy()[0]
+        torch.cuda.synchronize()
+        ed = time.time()
+        t += (ed - st)
         out.append(pre_pos[0])
+    torch.cuda.synchronize()
+    end_time = time.time()
+    # Calculate total time
+    total_time = end_time - start_time
+    print("Average model inference time every cycle: ", total_time/len(out))
+    print("Model inference time in total: ", total_time)
+    print("Model inference time in total: ", t, "Average:", t / len(out))
     out = np.array(out)
     print(out.shape)
+
+    plt.figure(figsize=(88.9 / 25.4, 88.9 / 25.4 / 1.4))
+    plt.rcParams['font.family'] = 'Times New Roman'
+    xx = np.arange(1, seg + 1)
+    integral = [np.sum(cg[i - 1:]) for i in xx]
+    plt.plot(xx, cg)
+    plt.ylabel("Absolute values of gradients")
+    plt.xlabel("Input sequence number")
+    plt.tight_layout()
+    # plt.savefig(r"./figures/LSTM_input_contribution_seg{}_sr{}.svg".format(seg, sr))
+    # plt.show()
+
 
     plt.figure(figsize=(18, 12))
     plt.tick_params(labelsize=30)
@@ -164,7 +238,7 @@ if __name__ == '__main__':
     plt.legend(fontsize=30)
 
     # plt.savefig("./results/OurTendon-LSTM-0baselineForTrain-Non0Test0.{}Hz_pos{}.jpg".format(test_freq[0], pos1))
-    plt.show()
+    # plt.show()
 
     # plot the training and validation loss
 

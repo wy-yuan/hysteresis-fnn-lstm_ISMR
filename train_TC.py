@@ -7,9 +7,10 @@ import argparse
 import math
 import numpy as np
 from torch.utils.data import DataLoader
-from tendon_catheter_dataset import Tendon_catheter_Dataset
+# from tendon_catheter_dataset import Tendon_catheter_Dataset
+from TC_dataset import Tendon_catheter_Dataset
 import os
-
+import time
 criterionMSE = nn.MSELoss()
 
 class LSTMNet(nn.Module):
@@ -141,7 +142,7 @@ def test(model, device, test_loader, model_name="LSTM", seg=50, f=True, fq=True)
             total += 1
     test_loss /= total
 
-    print('\n--Test set: Average loss: {:.4f}\n'.format(
+    print('\n--Test set: Average loss: {:.6f}\n'.format(
         test_loss))
     return test_loss
 
@@ -161,9 +162,9 @@ def main():
                         help='how many batches to wait before logging training status')
     parser.add_argument('--save-model', action='store_true', default=True,
                         help='For Saving the current Model')
-    parser.add_argument('--model_name', type=str, default="LSTM")
+    parser.add_argument('--model_name', type=str, default="FNN")
     parser.add_argument('--checkpoints_dir', type=str,
-                        default="./checkpoints/FixValidateData_Inverse_TC_LSTM_45ca_1rep_seg50_sr25_NOrsNOfq_loss10000_epoch500/")
+                        default="./checkpoints/Train12345Hz1rep_INV_FNN_seg50_sr25_NOrsNOfq_TCdataset_NOwd/")
     parser.add_argument('--lstm_layers', type=int, default=2)
     args = parser.parse_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
@@ -173,7 +174,7 @@ def main():
 
     if not os.path.exists(args.checkpoints_dir):
         os.makedirs(args.checkpoints_dir)
-    filepath = "./tendon_data/45ca_1rep"
+    filepath = "./tendon_data/Train12345Hz_1rep"
     pos = 0
     seg = 50
     sr = 25  # Hz, sampling rate
@@ -182,6 +183,7 @@ def main():
     fq = False
     input_dim = 1  # rs and freq
     act = None
+    wd = 0
     lstm_test_acc = []
     lstm_train_loss = []
     if "LSTM" in args.model_name:
@@ -192,7 +194,8 @@ def main():
         print('Training FNN.')
         model = FFNet(inp_dim=input_dim, hidden_dim=64, seg=seg).to(device)
         lr = 10 * 1e-4
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+    # optimizer = optim.Adam(model.parameters(), lr=lr)
     # lr 5*1e-4 for FFN, 10*1e-4 for LSTM
     if "LSTM" in args.model_name:
         train_dataset = Tendon_catheter_Dataset("train", seg=seg, filepath=filepath, pos=pos, sample_rate=sr, random_sample=rs)
@@ -207,7 +210,7 @@ def main():
         print('------Train epoch---------: {} \n'.format(epoch))
         train_acc = train(args, model, device, train_data, optimizer, epoch, model_name=args.model_name, seg=seg, f=forward, fq=fq)
         test_acc = test(model, device, test_data, model_name=args.model_name, seg=seg, f=forward, fq=fq)
-        print('\n--Train set: Average loss: {:.4f}\n'.format(train_acc))
+        print('\n--Train set: Average loss: {:.6f}\n'.format(train_acc))
         lstm_test_acc.append(test_acc)
         lstm_train_loss.append(train_acc)
         if args.save_model:
@@ -228,5 +231,11 @@ def main():
                      str(args.lstm_layers), str(args.batch_size), str(args.epochs)), "wb"))
 
 if __name__ == '__main__':
-    loss_weight = 10000
+    torch.cuda.synchronize()
+    start_time = time.time()
+    loss_weight = 1
     main()
+    torch.cuda.synchronize()
+    end_time = time.time()
+    total_time = end_time - start_time
+    print("Model training time in total: ", total_time)
