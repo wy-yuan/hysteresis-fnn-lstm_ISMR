@@ -39,11 +39,12 @@ class LSTMNet(nn.Module):
 
 class FFNet(nn.Module):
 
-    def __init__(self, inp_dim=1, hidden_dim=64, seg=50, dropout=0):
+    def __init__(self, inp_dim=1, hidden_dim=64, seg=50, dropout=0, num_layers=2):
         super(FFNet, self).__init__()
         # self.num_layers = 5
         self.output_dim = 1
         self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
         self.fc1 = nn.Linear(inp_dim*seg, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)  # two hidden layers
         self.fc3 = nn.Linear(hidden_dim, self.output_dim*1)
@@ -51,13 +52,21 @@ class FFNet(nn.Module):
     def forward(self, x):
         x = torch.flatten(x, start_dim=1)
         x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        if self.num_layers == 2:
+            x = F.relu(self.fc2(x))
         out = self.fc3(x)
         out = out.unsqueeze(dim=2)
         return out
 
+def std_dev(input, output, delta=1e-4):
+    # print("input shape ", input.shape)
+    # print("output shape ", output.shape)
+    # std_loss = torch.mean(torch.std(output, dim=2) - torch.std(input, dim=1))
+    std_loss = torch.mean(torch.std(output, dim=2) / (torch.std(input, dim=1) + delta))
+    # print(std_loss)
+    return std_loss
 
-def train(args, model, device, train_loader, optimizer, epoch, clip_value=100, model_name="LSTM", seg=50, f=True, fq=True):
+def train(args, model, device, train_loader, optimizer, model_name="LSTM", seg=50, f=True, fq=True):
     model.train()
     train_loss = 0
     total = 0
@@ -81,17 +90,22 @@ def train(args, model, device, train_loader, optimizer, epoch, clip_value=100, m
         # print("out shape**********", output.shape)
         output = torch.transpose(output, 1, 2)
         # poses shape******* torch.Size([16, 50, 1])
-
+        # print(tip_pos.shape)
         if model_name == "FNN":
             poses = torch.transpose(tip_pos[:, seg-1:seg, 0:1], 1, 2)
         else:
-            poses = torch.transpose(tip_pos, 1, 2)
+            poses = torch.transpose(tip_pos[:, :, 0:1], 1, 2)
             # output = torch.transpose(output[: 49:50, 0:1], 1, 2)
             # poses = torch.transpose(tip_pos[: 49:50, 0:1], 1, 2)
         # print("output shape", output.shape, "poses shape", poses.shape)
         # loss = F.pairwise_distance(output[:, :, :], poses[:, :, :], p=2)
         # loss = torch.mean(loss)
-        loss = criterionMSE(output, poses)*loss_weight
+        if args.std_loss_weight > 0:
+            std_loss = std_dev(tendon_disp, output, delta=args.delta)*args.std_loss_weight
+            # print("std loss", std_loss)
+            loss = criterionMSE(output, poses)*loss_weight + std_loss
+        else:
+            loss = criterionMSE(output, poses)*loss_weight
         loss.backward()
         # torch.nn.utils.clip_grad_value_(model.parameters(), clip_value)
         optimizer.step()
@@ -103,7 +117,7 @@ def train(args, model, device, train_loader, optimizer, epoch, clip_value=100, m
     return train_loss/total
 
 
-def test(model, device, test_loader, model_name="LSTM", seg=50, f=True, fq=True):
+def test(args, model, device, test_loader, model_name="LSTM", seg=50, f=True, fq=True):
     model.eval()
     test_loss = 0
     total = 0
@@ -130,14 +144,18 @@ def test(model, device, test_loader, model_name="LSTM", seg=50, f=True, fq=True)
             if model_name == "FNN":
                 poses = torch.transpose(tip_pos[:, seg-1:seg, 0:1], 1, 2)
             else:
-                poses = torch.transpose(tip_pos, 1, 2)
+                poses = torch.transpose(tip_pos[:, :, 0:1], 1, 2)
                 # output = torch.transpose(output[: 49:50, 0:1], 1, 2)
                 # poses = torch.transpose(tip_pos[: 49:50, 0:1], 1, 2)
             # poses = torch.transpose(tip_pos, 1, 2)
             # print(poses.shape)
             # loss = F.pairwise_distance(output[:,:,:], poses[:,:,:], p=2)
             # loss = torch.mean(loss)
-            loss = criterionMSE(output, poses)*loss_weight
+            if args.std_loss_weight > 0:
+                std_loss = std_dev(tendon_disp, output, delta=args.delta) * args.std_loss_weight
+                loss = criterionMSE(output, poses) * loss_weight + std_loss
+            else:
+                loss = criterionMSE(output, poses) * loss_weight
             test_loss += loss.item()
             total += 1
     test_loss /= total
@@ -162,10 +180,13 @@ def main():
                         help='how many batches to wait before logging training status')
     parser.add_argument('--save-model', action='store_true', default=True,
                         help='For Saving the current Model')
-    parser.add_argument('--model_name', type=str, default="FNN")
+    parser.add_argument('--model_name', type=str, default="LSTM")
     parser.add_argument('--checkpoints_dir', type=str,
-                        default="./checkpoints/Train12345Hz1rep_INV_FNN_seg50_sr25_NOrsNOfq_TCdataset_NOwd/")
+                        default="./checkpoints/innerTSlack40_LSTM_layer2_seg50_sr25_stdRatio1e-4_delta1e-4/") #stdRatio1e-4_delta1e-4
     parser.add_argument('--lstm_layers', type=int, default=2)
+    parser.add_argument('--fnn_layers', type=int, default=2)
+    parser.add_argument('--std_loss_weight', type=float, default=1e-4)
+    parser.add_argument('--delta', type=float, default=1e-4, help="delta for std loss")
     args = parser.parse_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -174,11 +195,11 @@ def main():
 
     if not os.path.exists(args.checkpoints_dir):
         os.makedirs(args.checkpoints_dir)
-    filepath = "./tendon_data/Train12345Hz_1rep"
+    filepath = "./tendon_data/innerTSlack40"
     pos = 0
     seg = 50
     sr = 25  # Hz, sampling rate
-    forward = False  # True for forward kinematic modeling, False for inverse kinematic modeling
+    forward = True  # True for forward kinematic modeling, False for inverse kinematic modeling
     rs = False  # random sample
     fq = False
     input_dim = 1  # rs and freq
@@ -188,11 +209,11 @@ def main():
     lstm_train_loss = []
     if "LSTM" in args.model_name:
         print('Training LSTM.')
-        model = LSTMNet(inp_dim=input_dim, num_layers=args.lstm_layers, act=act).to(device)
+        model = LSTMNet(inp_dim=input_dim, hidden_dim=64, num_layers=args.lstm_layers, act=act).to(device)
         lr = 10 * 1e-4  # 10 * 1e-4
     else:
         print('Training FNN.')
-        model = FFNet(inp_dim=input_dim, hidden_dim=64, seg=seg).to(device)
+        model = FFNet(inp_dim=input_dim, hidden_dim=64, seg=seg, num_layers=args.fnn_layers).to(device)
         lr = 10 * 1e-4
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
     # optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -208,13 +229,13 @@ def main():
     min_test_acc = 1000
     for epoch in range(1, args.epochs + 1):
         print('------Train epoch---------: {} \n'.format(epoch))
-        train_acc = train(args, model, device, train_data, optimizer, epoch, model_name=args.model_name, seg=seg, f=forward, fq=fq)
-        test_acc = test(model, device, test_data, model_name=args.model_name, seg=seg, f=forward, fq=fq)
+        train_acc = train(args, model, device, train_data, optimizer, model_name=args.model_name, seg=seg, f=forward, fq=fq)
+        test_acc = test(args, model, device, test_data, model_name=args.model_name, seg=seg, f=forward, fq=fq)
         print('\n--Train set: Average loss: {:.6f}\n'.format(train_acc))
         lstm_test_acc.append(test_acc)
         lstm_train_loss.append(train_acc)
         if args.save_model:
-            if epoch % 50 == 0:
+            if epoch % 10 == 0:
                 torch.save(model.state_dict(), args.checkpoints_dir +
                            "TC_" + args.model_name + "_L{}_bs{}_epoch{}.pt".format(str(args.lstm_layers),
                                                                                      str(args.batch_size), str(epoch)))

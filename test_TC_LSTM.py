@@ -128,9 +128,12 @@ if __name__ == '__main__':
 
     #  different sampling rate
     # path = "./checkpoints/Train12345Hz1rep_LSTM_seg50_sr10_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch449_best8.010477757858071e-05.pt"
-    # path = "./checkpoints/Train12345Hz1rep_LSTM_seg50_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch488_best0.00010981084632440833.pt"
+    path = "./checkpoints/Train12345Hz1rep_LSTM_seg50_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch488_best0.00010981084632440833.pt"
     # path = "./checkpoints/Train12345Hz1rep_LSTM_seg50_sr50_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch468_best0.00016143671042987854.pt"
     # path = "./checkpoints/Train12345Hz1rep_LSTM_seg50_sr100_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch377_best0.0002389827078441652.pt"
+
+    # path = "./checkpoints/Train12345Hz1rep_INV_LSTM_seg50_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch477_best0.0001874904317139533.pt"
+    # path = "./checkpoints/Train12345Hz1rep_INV_LSTM_seg50_sr25_NOrsNOfq_TCdataset_NOwd_pos1/TC_LSTM_L2_bs16_epoch399_best0.00014465532957102993.pt"
 
     forward = True
     pos1 = 0
@@ -145,9 +148,9 @@ if __name__ == '__main__':
     # model.cuda()
     model.eval()
 
-    seg = 100
+    seg = 50
     # load data
-    path = "./tendon_data/45ca_1rep/test/0BL_015Hz_repn.txt"
+    path = "./tendon_data/45ca_1rep/test/MidBL_015Hz_repn.txt"
     # path = "./tendon_data/Train135Hz_1rep/train/0BL_01hz_rep2.txt"
     # path = "./tendon_data/Train135Hz_1rep/validate/EndBL_01hz_rep5.txt"
     # path = "./tendon_data/Train135Hz_1rep/validate/0BL_03hz_rep4.txt"
@@ -159,13 +162,15 @@ if __name__ == '__main__':
 
     if forward:
         joints = data['tendon_disp'][:, np.newaxis].astype("float32")
+        pos = data['tip_A'][:, np.newaxis].astype("float32")
     else:
         joints = data['tip_A'][:, np.newaxis].astype("float32")
+        pos = data['tendon_disp'][:, np.newaxis].astype("float32")
     if fq:
         freq = data['freq'][:, np.newaxis].astype("float32")
         joints = np.concatenate([joints, freq], axis=1)
 
-    pre_pos = np.array([[0.0]]).astype("float32")
+    pre_pos = np.array([[-1.0]]).astype("float32")
 
     out = []
     hidden = (torch.zeros(model.num_layers, 1, model.hidden_dim).to(device),
@@ -177,12 +182,12 @@ if __name__ == '__main__':
     cg = 0
     for i in range(data['tendon_disp'].shape[0]):
         # if i >= seg and i < data['tendon_disp'].shape[0]-seg:
-        if i == 100:
+        if i == 100 and pos1 == 0:
             contribute = (compute_gradient(model, np.array([joints[i:i + seg, 0:input_dim]]), hidden, seg=seg))
             cg += np.abs(contribute)
         joint = joints[i:i + 1, 0:input_dim]
         if pos1 == 1:
-            input_ = np.hstack([joint, pre_pos])  # freq
+            input_ = np.hstack([joint, pre_pos])[np.newaxis, :]  # freq
         else:
             input_ = np.array([joint])
         torch.cuda.synchronize()
@@ -204,31 +209,32 @@ if __name__ == '__main__':
     out = np.array(out)
     print(out.shape)
 
-    plt.figure(figsize=(88.9 / 25.4, 88.9 / 25.4 / 1.4))
-    plt.rcParams['font.family'] = 'Times New Roman'
-    xx = np.arange(1, seg + 1)
-    integral = [np.sum(cg[i - 1:]) for i in xx]
-    plt.plot(xx, cg)
-    plt.ylabel("Absolute values of gradients")
-    plt.xlabel("Input sequence number")
-    plt.tight_layout()
-    # plt.savefig(r"./figures/LSTM_input_contribution_seg{}_sr{}.svg".format(seg, sr))
-    # plt.show()
+    if pos1==0:
+        plt.figure(figsize=(88.9 / 25.4, 88.9 / 25.4 / 1.4))
+        plt.rcParams['font.family'] = 'Times New Roman'
+        xx = np.arange(1, seg + 1)
+        integral = [np.sum(cg[i - 1:]) for i in xx]
+        plt.plot(xx, cg)
+        plt.ylabel("Absolute values of gradients")
+        plt.xlabel("Input sequence number")
+        plt.tight_layout()
+        # plt.savefig(r"./figures/LSTM_input_contribution_seg{}_sr{}.svg".format(seg, sr))
+        # plt.show()
 
 
     plt.figure(figsize=(18, 12))
     plt.tick_params(labelsize=30)
     if forward:
-        plt.plot(data['tendon_disp'][seg:]*6, data['tip_A'][seg:]*90, 'b-', linewidth=4, label="Ground truth")
-        plt.plot(data['tendon_disp'][seg:]*6, out[seg:, 0]*90, 'r-', linewidth=4, label="LSTM prediction")
+        plt.plot(data['tendon_disp'][seg:]*6, data['tip_A'][seg:]*90, 'b-', linewidth=2, label="Ground truth")
+        plt.plot(data['tendon_disp'][seg:]*6, out[seg:, 0]*90, 'r-', linewidth=2, label="LSTM prediction")
         plt.xlim([-1, 6])
         plt.ylim([0, 90])
         plt.xlabel("Tendon displacement", fontsize=35)
         plt.ylabel("Tip angle azimuth (deg)", fontsize=35)
         plt.title("RMSE:{:.3f} (deg)".format(rmse_norm(out[seg:, 0] * 90, data['tip_A'][seg:] * 90)), fontsize=35)
     else:
-        plt.plot(data['tip_A'][seg:] * 90, data['tendon_disp'][seg:] * 6, 'b-', linewidth=4, label="Ground truth")
-        plt.plot(data['tip_A'][seg:] * 90, out[seg:, 0] * 6, 'r-', linewidth=4, label="LSTM prediction")
+        plt.plot(data['tip_A'][seg:] * 90, data['tendon_disp'][seg:] * 6, 'b-', linewidth=2, label="Ground truth")
+        plt.plot(data['tip_A'][seg:] * 90, out[seg:, 0] * 6, 'r-', linewidth=2, label="LSTM prediction")
         plt.ylim([-1, 6])
         plt.xlim([0, 90])
         plt.ylabel("Tendon displacement", fontsize=35)
@@ -238,7 +244,7 @@ if __name__ == '__main__':
     plt.legend(fontsize=30)
 
     # plt.savefig("./results/OurTendon-LSTM-0baselineForTrain-Non0Test0.{}Hz_pos{}.jpg".format(test_freq[0], pos1))
-    # plt.show()
+    plt.show()
 
     # plot the training and validation loss
 

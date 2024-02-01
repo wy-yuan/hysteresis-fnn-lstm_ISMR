@@ -67,12 +67,14 @@ class Tendon_catheter_Dataset(data.Dataset):
         data_ind = np.random.choice(self.index_list)
         seq_ind = np.random.randint(1, self.data[data_ind]['tendon_disp'].shape[0] - self.seg*rs, 1)[0]
         if self.pos == 1:
-            tendon_disp = np.hstack([self.data[data_ind]['tendon_disp'][[seq_ind+j*rs for j in range(self.seg)]],
-                                     self.data[data_ind]['tendon_disp'][[seq_ind-1+j*rs for j in range(self.seg)]]])   # previous position
+            tendon_disp = np.vstack([self.data[data_ind]['tendon_disp'][[seq_ind+j*rs for j in range(self.seg)]],
+                                     self.data[data_ind]['tendon_disp'][[seq_ind-1+j*rs for j in range(self.seg)]]]).T  # previous position
+            tip_pos = np.vstack([self.data[data_ind]['tip_A'][[seq_ind + j * rs for j in range(self.seg)]],
+                                     self.data[data_ind]['tip_A'][[seq_ind - 1 + j * rs for j in range(self.seg)]]]).T  # previous position
         else:
             tendon_disp = self.data[data_ind]['tendon_disp'][[seq_ind + j * rs for j in range(self.seg)]][:, np.newaxis]
         # print(tendon_disp.shape)
-        tip_pos = self.data[data_ind]['tip_A'][[seq_ind+j*rs for j in range(self.seg)]][:, np.newaxis]
+            tip_pos = self.data[data_ind]['tip_A'][[seq_ind+j*rs for j in range(self.seg)]][:, np.newaxis]
         freq = self.data[data_ind]['freq'][[seq_ind + j * rs for j in range(self.seg)]][:, np.newaxis]
 
         tendon_disp = torch.Tensor(tendon_disp).type(torch.float)

@@ -30,9 +30,9 @@ def load_data(data_path, seg, sample_rate=100):
     freq = np.ones_like(tendon_disp, dtype=np.float32) * frequency
     return {'time': interp_time, 'tendon_disp': tendon_disp, 'tip_A': tip_A, 'freq': freq}
 
-def test_LSTM(pt_path, data_path, seg=50, sr=25, forward=True, fq=False, input_dim=1):
+def test_LSTM(pt_path, data_path, seg=50, sr=25, forward=True, fq=False, input_dim=1, rm_init=0, numl=2, h=64):
     device = "cuda"
-    model = LSTMNet(inp_dim=input_dim, num_layers=2)
+    model = LSTMNet(inp_dim=input_dim, hidden_dim=h, num_layers=numl)
     sr = sr
     seg = seg
     model.load_state_dict(torch.load(pt_path, map_location=device))
@@ -72,7 +72,7 @@ def test_LSTM(pt_path, data_path, seg=50, sr=25, forward=True, fq=False, input_d
     res_nrmse = res_rmse/(max(gt[rm_init_number:])-min(gt[rm_init_number:]))
     return input, gt, output, data['time'], res_rmse, res_nrmse
 
-def test_FNN(pt_path, data_path, seg=50, sr=25, forward=True, fq=False, input_dim=1):
+def test_FNN(pt_path, data_path, seg=50, sr=25, forward=True, fq=False, input_dim=1, rm_init=0):
     device = "cuda"
     model = FFNet(inp_dim=input_dim, hidden_dim=64, seg=seg)
     sr = sr
@@ -171,7 +171,7 @@ if __name__ == '__main__':
         Forward_rmse_nrmse1 = [100]
         for i in range(len(forward_path)):
             input_, gt, output, time, res_rmse, res_nrmse = test_LSTM(forward_path[i], data_path, seg=buffer_sizes[i], forward=True,
-                                                                          fq=fq, input_dim=input_dim)
+                                                                          fq=fq, input_dim=input_dim, rm_init=rm_init)
             Forward_rmse_nrmse1.append(res_rmse)
 
         plt.tick_params(labelsize=8, pad=0.01, length=2)
@@ -187,7 +187,7 @@ if __name__ == '__main__':
         Forward_rmse_nrmse2 = []
         for i in range(len(forward_path)):
             input_, gt, output, time, res_rmse, res_nrmse = test_FNN(forward_path[i], data_path, seg=buffer_sizes[i], forward=True,
-                                                                     fq=fq, input_dim=input_dim)
+                                                                     fq=fq, input_dim=input_dim, rm_init=rm_init)
             Forward_rmse_nrmse2.append(res_rmse)
 
         ax2 = ax1.twinx()
@@ -217,7 +217,7 @@ if __name__ == '__main__':
         for i in range(len(forward_path)):
             input_, gt, output, time, res_rmse, res_nrmse = test_LSTM(forward_path[i], data_path, sr=sample_rate[i],
                                                                       forward=True,
-                                                                      fq=fq, input_dim=input_dim)
+                                                                      fq=fq, input_dim=input_dim, rm_init=rm_init)
             Forward_rmse_nrmse.append(res_rmse)
 
         plt.tick_params(labelsize=8, pad=0.01, length=2)
@@ -234,7 +234,7 @@ if __name__ == '__main__':
         for i in range(len(forward_path)):
             input_, gt, output, time, res_rmse, res_nrmse = test_FNN(forward_path[i], data_path, sr=sample_rate[i],
                                                                      forward=True,
-                                                                     fq=fq, input_dim=input_dim)
+                                                                     fq=fq, input_dim=input_dim, rm_init=rm_init)
             Forward_rmse_nrmse.append(res_rmse)
 
         ax2 = ax1.twinx()

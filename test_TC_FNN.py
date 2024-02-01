@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 import os
 import time
 from torch.autograd import grad
+from queue import Queue
 def rmse_norm(y1, y2):
     return np.linalg.norm(y1 - y2) / np.sqrt(len(y1))
 
@@ -43,8 +44,10 @@ def test_FNN(pt_path, data_path, seg=50, forward=True, fq=False, input_dim=1):
     data = load_data(data_path, seg, sample_rate=sr)
     if forward:
         joints = data['tendon_disp'][:, np.newaxis].astype("float32")
+        pre_pos = data['tip_A'][:, np.newaxis].astype("float32")[0:0 + seg, 0:1]
     else:
         joints = data['tip_A'][:, np.newaxis].astype("float32")
+        pre_pos = data['tendon_disp'][:, np.newaxis].astype("float32")[0:0 + seg, 0:1]
     if fq:
         freq = data['freq'][:, np.newaxis].astype("float32")
         joints = np.concatenate([joints, freq], axis=1)
@@ -52,7 +55,6 @@ def test_FNN(pt_path, data_path, seg=50, forward=True, fq=False, input_dim=1):
     out = []
     for i in range(data['tendon_disp'].shape[0] - seg):
         joint = joints[i + 1:i + seg + 1, 0:input_dim]
-        pre_pos = pos[i:i + seg, 0:1]
         if pos1 == 1:
             input_ = np.hstack([joint, pre_pos])
         else:
@@ -147,10 +149,18 @@ if __name__ == '__main__':
     # path = "./checkpoints/Train12345Hz1rep_FNN_seg50_sr50_NOrsNOfq_TCdataset_NOwd/TC_FNN_L2_bs16_epoch444_best9.54199044659666e-05.pt"
     # path = "./checkpoints/Train12345Hz1rep_FNN_seg50_sr100_NOrsNOfq_TCdataset_NOwd/TC_FNN_L2_bs16_epoch455_best0.00019113425758016234.pt"
 
-    forward = True
+    path = "./checkpoints/Train12345Hz1rep_INV_FNN_seg50_sr25_NOrsNOfq_TCdataset_NOwd/TC_FNN_L2_bs16_epoch486_best0.00015277773349367494.pt"
+    # path = "./checkpoints/Train12345Hz1rep_INV_FNN_seg50_sr25_NOrsNOfq_TCdataset_NOwd_pos1/TC_FNN_L2_bs16_epoch449_best0.0001882735092507361.pt"
+
+    path = "./checkpoints/longPause_LSTM_seg50_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch62_best0.00035399518612578857.pt"
+    path = "./checkpoints/longPause_FNN_seg50_sr25_NOrsNOfq_TCdataset_NOwd/TC_FNN_L2_bs16_epoch60_best0.0002575914480122126.pt"
+    path = "./checkpoints/longPause_INV_LSTM_seg50_sr25_NOrsNOfq_TCdataset_NOwd/TC_LSTM_L2_bs16_epoch44_best0.0005857760914881572.pt"
+    path = "./checkpoints/longPause_INV_FNN_seg50_sr25_NOrsNOfq_TCdataset_NOwd/TC_FNN_L2_bs16_epoch47_best0.0005895499229062175.pt"
+
+    forward = False
     pos1 = 0
     sr = 25
-    seg = 2
+    seg = 50
     # fq, input_dim = True, 2
     fq, input_dim = False, 1
     # load trained model
@@ -161,7 +171,8 @@ if __name__ == '__main__':
     model.eval()
 
     path = "./tendon_data/45ca_1rep/validate/0BL_01hz_rep5.txt"
-    path = "./tendon_data/45ca_threeTypeDecay/test/0BL_015Hz_repn.txt"
+    path = "./tendon_data/45ca_threeTypeDecay/test/EndBL_045Hz_repn.txt"
+    path = "./tendon_data/45ca_1rep/random_withpause5.txt"
     # path = "./tendon_data/45ca/train/0_1hz_rep4.txt"
     # path = "./tendon_data/Train135Hz_1rep/validate/EndBL_01hz_rep5.txt"
     # path = "./tendon_data/Train135Hz_1rep/validate/0BL_03hz_rep4.txt"
@@ -173,8 +184,12 @@ if __name__ == '__main__':
 
     if forward:
         joints = data['tendon_disp'][:, np.newaxis].astype("float32")
+        pos = data['tip_A'][:, np.newaxis].astype("float32")
+        pre_pos = pos[0:0 + seg, 0:1]
     else:
         joints = data['tip_A'][:, np.newaxis].astype("float32")
+        pos = data['tendon_disp'][:, np.newaxis].astype("float32")
+        pre_pos = pos[0:0 + seg, 0:1]
     if fq:
         freq = data['freq'][:, np.newaxis].astype("float32")
         joints = np.concatenate([joints, freq], axis=1)
@@ -182,21 +197,19 @@ if __name__ == '__main__':
     # check the contribution of each input to the output
     # check_weights(model)
 
-    pos = data['tip_A'][:, np.newaxis].astype("float32")
-
     out = []
     torch.cuda.synchronize()
     start_time = time.time()
     t = 0
     cg = 0
     for i in range(data['tendon_disp'].shape[0]-seg):
-        if i > 0:
+        if i > 0 and pos1!=1:
             contribute = (compute_gradient(model, np.array([joints[i + 1:i + seg + 1, 0:input_dim]]), seg=seg))
             cg += np.abs(contribute)
         joint = joints[i+1:i + seg+1, 0:input_dim]
-        pre_pos = pos[i:i+seg, 0:1]
+        # pre_pos = pos[i:i + seg, 0:1]
         if pos1 == 1:
-            input_ = np.hstack([joint, pre_pos])
+            input_ = np.hstack([joint, pre_pos])[np.newaxis, :]
         else:
             input_ = np.array([joint])
         torch.cuda.synchronize()
@@ -208,6 +221,8 @@ if __name__ == '__main__':
         ed = time.time()
         t += (ed - st)
         out.append(predict_pos[0])
+        pre_pos = np.vstack([pre_pos[1:], predict_pos])
+
     torch.cuda.synchronize()
     end_time = time.time()
     # Calculate total time
@@ -218,19 +233,20 @@ if __name__ == '__main__':
     out = np.array(out)
     print(out.shape)
 
-    plt.figure(figsize=(88.9 / 25.4, 88.9 / 25.4 / 1.4))
-    plt.rcParams['font.family'] = 'Times New Roman'
-    xx = np.arange(1, seg+1)
-    integral = [np.sum(cg[i-1:]) for i in xx]
-    plt.plot(xx, cg)
-    # plt.plot(xx, integral, label="integral")
-    # plt.legend()
-    plt.ylabel("Absolute values of gradients")
-    plt.xlabel("Input sequence number")
-    plt.ylim([0, max(cg)*1.1])
-    plt.tight_layout()
-    # plt.savefig(r"./figures/FNN_input_contribution_buffer{}_sr{}.svg".format(seg, sr))
-    # plt.show()
+    if pos1 == 0:
+        plt.figure(figsize=(88.9 / 25.4, 88.9 / 25.4 / 1.4))
+        plt.rcParams['font.family'] = 'Times New Roman'
+        xx = np.arange(1, seg+1)
+        integral = [np.sum(cg[i-1:]) for i in xx]
+        plt.plot(xx, cg)
+        # plt.plot(xx, integral, label="integral")
+        # plt.legend()
+        plt.ylabel("Absolute values of gradients")
+        plt.xlabel("Input sequence number")
+        plt.ylim([0, max(cg)*1.1])
+        plt.tight_layout()
+        # plt.savefig(r"./figures/FNN_input_contribution_buffer{}_sr{}.svg".format(seg, sr))
+        # plt.show()
 
     plt.figure(figsize=(18, 12))
     plt.tick_params(labelsize=30)
@@ -253,7 +269,7 @@ if __name__ == '__main__':
     plt.grid()
     plt.legend(fontsize=30)
     # plt.savefig("./results/OurTendon-LSTM-0baselineForTrain-Non0Test0.{}Hz_pos{}.jpg".format(test_freq[0], pos1))
-    # plt.show()
+    plt.show()
 
     # # plot the training and validation loss
     # acc_file = "./checkpoints/TC_FNN_45ca_threeTypeDecay_seg50_sr100_rsFalse_lr1e-3/TC_FNN_L2_acc_bs16_epoch100.pkl"
