@@ -9,17 +9,18 @@ import numpy as np
 from torch.utils.data import DataLoader
 # from tendon_catheter_dataset import Tendon_catheter_Dataset
 from TC_dataset import Tendon_catheter_Dataset
+# from TC_dataset_tipA import Tendon_catheter_Dataset
 import os
 import time
 criterionMSE = nn.MSELoss()
 
 class LSTMNet(nn.Module):
 
-    def __init__(self, inp_dim=1, hidden_dim=64, num_layers=2, dropout=0, act=None):
+    def __init__(self, inp_dim=1, hidden_dim=64, num_layers=2, output_dim=1, dropout=0, act=None):
         super(LSTMNet, self).__init__()
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-        self.output_dim = 1
+        self.output_dim = output_dim
         self.act = act
 
         self.rnn = nn.LSTM(inp_dim, self.hidden_dim, dropout=dropout, num_layers=self.num_layers, batch_first=True)
@@ -37,12 +38,36 @@ class LSTMNet(nn.Module):
         # out = F.log_softmax(linear_out, dim=1)
         return linear_out, h_
 
+class GRUNet(nn.Module):
+
+    def __init__(self, inp_dim=1, hidden_dim=64, num_layers=2, output_dim=1, dropout=0, act=None):
+        super(GRUNet, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.output_dim = output_dim
+        self.act = act
+
+        self.rnn = nn.GRU(inp_dim, self.hidden_dim, dropout=dropout, num_layers=self.num_layers, batch_first=True)
+        self.linear = nn.Linear(hidden_dim, self.output_dim)
+        # nn.init.orthogonal(self.rnn.weight_ih_l0)
+        # nn.init.orthogonal(self.rnn.weight_hh_l0)
+
+    def forward(self, points, hidden):
+        gru_out, h_ = self.rnn(points, hidden)
+        if self.act == "tanh":
+            gru_out = F.tanh(gru_out)
+        elif self.act == "relu":
+            gru_out = F.relu(gru_out)
+        linear_out = self.linear(gru_out)
+        # out = F.log_softmax(linear_out, dim=1)
+        return linear_out, h_
+
 class FFNet(nn.Module):
 
-    def __init__(self, inp_dim=1, hidden_dim=64, seg=50, dropout=0, num_layers=2):
+    def __init__(self, inp_dim=1, hidden_dim=64, seg=50, output_dim=1, dropout=0, num_layers=2):
         super(FFNet, self).__init__()
         # self.num_layers = 5
-        self.output_dim = 1
+        self.output_dim = output_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.fc1 = nn.Linear(inp_dim*seg, hidden_dim)
@@ -66,16 +91,20 @@ def std_dev(input, output, delta=1e-4):
     # print(std_loss)
     return std_loss
 
-def train(args, model, device, train_loader, optimizer, model_name="LSTM", seg=50, f=True, fq=True):
+def train(args, model, device, train_loader, optimizer, model_name="LSTM", seg=50, f=True, fq=True, invY=False):
     model.train()
     train_loss = 0
     total = 0
     for batch_idx, data in enumerate(train_loader):
         if f:
             tendon_disp, tip_pos, freq = data["tendon_disp"].to(device), data["tip_pos"].to(device), data["freq"].to(device)
+            if invY:
+                tip_pos = tip_pos[:, :, 1:2]  # only keep Y as input
         else:
             # swap the input and output for inverse kinematic modeling
             tendon_disp, tip_pos, freq = data["tip_pos"].to(device), data["tendon_disp"].to(device), data["freq"].to(device)
+            if invY:
+                tendon_disp = tendon_disp[:, :, 1:2]  # only keep Y as input
         if fq:
             tendon_disp = torch.cat((tendon_disp, freq), dim=2)
         optimizer.zero_grad()
@@ -85,16 +114,20 @@ def train(args, model, device, train_loader, optimizer, model_name="LSTM", seg=5
             hidden = (torch.zeros(model.num_layers, bs, model.hidden_dim).to(device),
                       torch.zeros(model.num_layers, bs, model.hidden_dim).to(device))
             output, h_ = model(tendon_disp, hidden)
-        else:
+        elif model_name == "GRU":
+            hidden = torch.zeros(model.num_layers, bs, model.hidden_dim).to(device)
+            output, h_ = model(tendon_disp, hidden)
+        else:  # FNN
             output = model(tendon_disp)
         # print("out shape**********", output.shape)
         output = torch.transpose(output, 1, 2)
         # poses shape******* torch.Size([16, 50, 1])
         # print(tip_pos.shape)
         if model_name == "FNN":
-            poses = torch.transpose(tip_pos[:, seg-1:seg, 0:1], 1, 2)
+            # poses = torch.transpose(tip_pos[:, seg-1:seg, :], 1, 2)
+            poses = tip_pos[:, seg-1:seg, :]
         else:
-            poses = torch.transpose(tip_pos[:, :, 0:1], 1, 2)
+            poses = torch.transpose(tip_pos[:, :, :], 1, 2)
             # output = torch.transpose(output[: 49:50, 0:1], 1, 2)
             # poses = torch.transpose(tip_pos[: 49:50, 0:1], 1, 2)
         # print("output shape", output.shape, "poses shape", poses.shape)
@@ -117,7 +150,7 @@ def train(args, model, device, train_loader, optimizer, model_name="LSTM", seg=5
     return train_loss/total
 
 
-def test(args, model, device, test_loader, model_name="LSTM", seg=50, f=True, fq=True):
+def test(args, model, device, test_loader, model_name="LSTM", seg=50, f=True, fq=True, invY=False):
     model.eval()
     test_loss = 0
     total = 0
@@ -126,10 +159,14 @@ def test(args, model, device, test_loader, model_name="LSTM", seg=50, f=True, fq
             if f:
                 tendon_disp, tip_pos, freq = data["tendon_disp"].to(device), data["tip_pos"].to(device), data[
                     "freq"].to(device)
+                if invY:
+                    tip_pos = tip_pos[:, :, 1:2]  # only keep Y as input
             else:
                 # swap the input and output for inverse kinematic modeling
                 tendon_disp, tip_pos, freq = data["tip_pos"].to(device), data["tendon_disp"].to(device), data[
                     "freq"].to(device)
+                if invY:
+                    tendon_disp = tendon_disp[:, :, 1:2]  # only keep Y as input
             if fq:
                 tendon_disp = torch.cat((tendon_disp, freq), dim=2)
             bs = tendon_disp.shape[0]
@@ -137,14 +174,18 @@ def test(args, model, device, test_loader, model_name="LSTM", seg=50, f=True, fq
                 hidden = (torch.zeros(model.num_layers, bs, model.hidden_dim).to(device),
                           torch.zeros(model.num_layers, bs, model.hidden_dim).to(device))
                 output, h_ = model(tendon_disp, hidden)
-            else:
+            elif model_name == "GRU":
+                hidden = torch.zeros(model.num_layers, bs, model.hidden_dim).to(device)
+                output, h_ = model(tendon_disp, hidden)
+            else:  # FNN
                 output = model(tendon_disp)
             # print("test **********", output.size())
             output = torch.transpose(output, 1, 2)
             if model_name == "FNN":
-                poses = torch.transpose(tip_pos[:, seg-1:seg, 0:1], 1, 2)
+                # poses = torch.transpose(tip_pos[:, seg-1:seg, :], 1, 2)
+                poses = tip_pos[:, seg - 1:seg, :]
             else:
-                poses = torch.transpose(tip_pos[:, :, 0:1], 1, 2)
+                poses = torch.transpose(tip_pos[:, :, :], 1, 2)
                 # output = torch.transpose(output[: 49:50, 0:1], 1, 2)
                 # poses = torch.transpose(tip_pos[: 49:50, 0:1], 1, 2)
             # poses = torch.transpose(tip_pos, 1, 2)
@@ -170,7 +211,7 @@ def main():
     parser = argparse.ArgumentParser(description='PyTorch Example')
     parser.add_argument('--batch_size', type=int, default=16, metavar='N',
                         help='input batch size for training (default: 16)')
-    parser.add_argument('--epochs', type=int, default=500, metavar='N',
+    parser.add_argument('--epochs', type=int, default=100, metavar='N',
                         help='number of epochs to train (default: 1000)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
@@ -180,12 +221,12 @@ def main():
                         help='how many batches to wait before logging training status')
     parser.add_argument('--save-model', action='store_true', default=True,
                         help='For Saving the current Model')
-    parser.add_argument('--model_name', type=str, default="LSTM")
+    parser.add_argument('--model_name', type=str, default="FNN")
     parser.add_argument('--checkpoints_dir', type=str,
-                        default="./checkpoints/innerTSlack40_LSTM_layer2_seg50_sr25_stdRatio1e-4_delta1e-4/") #stdRatio1e-4_delta1e-4
+                        default="./checkpoints/TipY_Sinus12_FNNInv_layer2_seg1_sr25/") #stdRatio1e-4_delta1e-4
     parser.add_argument('--lstm_layers', type=int, default=2)
     parser.add_argument('--fnn_layers', type=int, default=2)
-    parser.add_argument('--std_loss_weight', type=float, default=1e-4)
+    parser.add_argument('--std_loss_weight', type=float, default=0)
     parser.add_argument('--delta', type=float, default=1e-4, help="delta for std loss")
     args = parser.parse_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
@@ -195,25 +236,33 @@ def main():
 
     if not os.path.exists(args.checkpoints_dir):
         os.makedirs(args.checkpoints_dir)
-    filepath = "./tendon_data/innerTSlack40"
+    filepath = "./tendon_data/Data_with_Initialization/Sinus12"
+    # filepath = "./tendon_data/Data_with_Initialization/Stair5s"
+    # filepath = "./tendon_data/Data_with_Initialization/SinusStair5s"
     pos = 0
-    seg = 50
+    seg = 1
     sr = 25  # Hz, sampling rate
-    forward = True  # True for forward kinematic modeling, False for inverse kinematic modeling
+    forward = False  # True for forward kinematic modeling, False for inverse kinematic modeling
+    inverseY = True  # label for training inverse model using tipY as input, OR forward model for tipY as output
     rs = False  # random sample
     fq = False
-    input_dim = 1  # rs and freq
+    input_dim = 1  #
+    output_dim = 1  # 1 for tip angle prediction, and 2 for tip displacement prediction
     act = None
     wd = 0
     lstm_test_acc = []
     lstm_train_loss = []
     if "LSTM" in args.model_name:
         print('Training LSTM.')
-        model = LSTMNet(inp_dim=input_dim, hidden_dim=64, num_layers=args.lstm_layers, act=act).to(device)
+        model = LSTMNet(inp_dim=input_dim, hidden_dim=64, num_layers=args.lstm_layers, output_dim=output_dim, act=act).to(device)
+        lr = 10 * 1e-4  # 10 * 1e-4
+    elif "GRU" in args.model_name:
+        print("Training GRU.")
+        model = GRUNet(inp_dim=input_dim, hidden_dim=64, num_layers=args.lstm_layers, output_dim=output_dim, act=act).to(device)
         lr = 10 * 1e-4  # 10 * 1e-4
     else:
         print('Training FNN.')
-        model = FFNet(inp_dim=input_dim, hidden_dim=64, seg=seg, num_layers=args.fnn_layers).to(device)
+        model = FFNet(inp_dim=input_dim, hidden_dim=64, seg=seg, num_layers=args.fnn_layers, output_dim=output_dim).to(device)
         lr = 10 * 1e-4
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
     # optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -229,8 +278,8 @@ def main():
     min_test_acc = 1000
     for epoch in range(1, args.epochs + 1):
         print('------Train epoch---------: {} \n'.format(epoch))
-        train_acc = train(args, model, device, train_data, optimizer, model_name=args.model_name, seg=seg, f=forward, fq=fq)
-        test_acc = test(args, model, device, test_data, model_name=args.model_name, seg=seg, f=forward, fq=fq)
+        train_acc = train(args, model, device, train_data, optimizer, model_name=args.model_name, seg=seg, f=forward, fq=fq, invY=inverseY)
+        test_acc = test(args, model, device, test_data, model_name=args.model_name, seg=seg, f=forward, fq=fq, invY=inverseY)
         print('\n--Train set: Average loss: {:.6f}\n'.format(train_acc))
         lstm_test_acc.append(test_acc)
         lstm_train_loss.append(train_acc)

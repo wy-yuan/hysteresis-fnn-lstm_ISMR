@@ -5,6 +5,8 @@ from scipy.io import loadmat
 from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema
 from scipy.signal import savgol_filter
+import sys
+sys.path.append("..")
 from train_TC import LSTMNet
 from train_TC import FFNet
 import torch
@@ -71,7 +73,6 @@ def test_FNN(pt_path, input_data, seg=50, sr=25, forward=True, input_dim=1):
     return output
 
 def sin_input_signal(x, f, type="non_decay"):
-    n = 1000
     A = 6/2
     tau = (-f / 6) * np.log(2 / 14)   # f/6*log(7)
     # y = A*np.exp(-tau*x)*(np.sin(2*np.pi*f*x-np.pi/2)+1)
@@ -86,7 +87,12 @@ def sin_input_signal(x, f, type="non_decay"):
         y = A * np.exp(-tau * x) * (np.sin(2 * np.pi * f * x - np.pi / 2) + 1)
         dy = -A * tau * np.exp(-tau * x) * (np.sin(2 * np.pi * f * x - np.pi / 2) + 1) + A * np.exp(
             -tau * x) * 2 * np.pi * f * np.cos(2 * np.pi * f * x - np.pi / 2)
-    #
+
+    if type == "0bl_inc":
+        y = A * np.exp(-tau * (7/f-x)) * (np.sin(2 * np.pi * f * (7/f-x) - np.pi / 2) + 1)
+        dy = A * tau * np.exp(-tau * (7/f-x)) * (np.sin(2 * np.pi * f * (7/f-x) - np.pi / 2) + 1) - A * np.exp(
+            -tau * (7/f-x)) * 2 * np.pi * f * np.cos(2 * np.pi * f * (7/f-x) - np.pi / 2)
+
     # # one direction decaying (45 base-line)
     if type == "midbl":
         y = A * np.exp(-tau * x) * (np.sin(2 * np.pi * f * x - np.pi / 2)) + A
@@ -99,7 +105,7 @@ def sin_input_signal(x, f, type="non_decay"):
         dy = -A * tau * np.exp(-tau * x) * (np.sin(2 * np.pi * f * x - np.pi / 2) - 1) + A * np.exp(
             -tau * x) * 2 * np.pi * f * np.cos(2 * np.pi * f * x - np.pi / 2)
 
-    return y
+    return y, dy
 
 def generate_random(t):
     max_time = 30
@@ -198,8 +204,105 @@ def generate_ramp_trail(max_time):
     # plt.plot(x_new, y_de, linestyle='-', linewidth=1)
     # plt.show()
 
+def generate_staircase(slope, stair, slope_rd=False, stair_rd=False, duration=[1,10]):
+    max_time = 0
+    if slope_rd:
+        slopes = np.random.rand(11)*(6-0.5) + 0.5   #~[0.6*np.pi, 3*np.pi]
+        # slopes = np.hstack([0.5, slopes])
+    else:
+        slopes = np.ones(11)*slope
+
+    if stair_rd:
+        stairs = [np.random.rand(1)*6]
+        while len(stairs) < 11:
+            stairs_i = np.random.rand(1)*6
+            if 0.5 < abs(stairs_i-stairs[-1]) < 3:
+                stairs.append(stairs_i)
+    else:
+        stairs = stair
+    stairs_durations = np.random.rand(11) * (duration[1]-duration[0]) + duration[0]  # stationary period duration ~[10, 60] second
+    x = [0]
+    y = [0]
+    stair_pre = 0
+    for i in range(len(stairs)):
+        slope = slopes[i]
+        slope_duration = abs(stairs[i]-stair_pre)/slope
+        stair_pre = stairs[i]
+        max_time = max_time + slope_duration
+        x = np.hstack([x, max_time])
+        y = np.hstack([y, stairs[i]])
+        stair_duration = stairs_durations[i]
+        max_time = max_time + stair_duration
+        x = np.hstack([x, max_time])
+        y = np.hstack([y, stairs[i]])
+
+    x_new = np.arange(0, max_time, 0.01)
+    y_new = np.interp(x_new, x, y)
+
+    y_de = (y_new[1:] - y_new[:-1]) / (x_new[1:] - x_new[:-1])
+    y_de = np.hstack([np.zeros(1), y_de])
+
+    return x_new, y_new, y_de, max_time
+
+def generate_rd(min_val, max_val, count, threshold):
+    numbers = []
+    while len(numbers) < count:
+        num = np.random.rand() * (max_val-min_val) + min_val
+        if all(abs(num - other) > threshold for other in numbers):
+            numbers.append(num)
+    return numbers
+# stair_times = np.sort(np.array(generate_rd(0, max_time*100, 10, max_time*5)).astype(int))
+def generate_sinus_stationary(sinusType, f, duration=[1, 10]):
+    max_time = 7/f
+    t = np.arange(0, max_time, 0.01)
+    sy, dsy = sin_input_signal(t, f, type=sinusType)
+
+    y_new = sy
+    stair_durations = np.array((np.random.rand(10) * (duration[1] - duration[0]) + duration[0])*100).astype(int)
+    stair_times = np.sort(np.array(np.random.rand(10)*max_time*100).astype(int))
+
+    for i in range(10):
+        stair_time = stair_times[i]
+        added = sum(stair_durations[:i])
+        index = stair_time+added
+        y_new = np.hstack([y_new[:index], np.ones(stair_durations[i])*sy[stair_time], y_new[index:]])
+    x_new = np.linspace(0, len(y_new)/100, len(y_new))
+    y_de = (y_new[1:] - y_new[:-1]) / (x_new[1:] - x_new[:-1])
+    y_de = np.hstack([np.zeros(1), y_de])
+    return x_new, y_new, y_de
 
 if __name__ == '__main__':
+    # increasing sinusoidal signal
+    t = np.linspace(0, 14, 1000)
+    y, dy = sin_input_signal(t, 0.5, type="0bl_inc")
+    plt.figure(figsize=(88.9 / 25.4, 88.9 / 25.4 / 2))
+    plt.rcParams['font.family'] = 'Times New Roman'
+    plt.tick_params(labelsize=8, pad=0.01, length=2)
+    plt.plot(t, y, linestyle='-', linewidth=1)
+    plt.plot(t, dy, linestyle='-', linewidth=1)
+    # plt.show()
+
+    # staircase with different slopes, each trail with one slope
+    slope, stair = [], []
+    x_new, y_new, y_de, max_time = generate_staircase(slope, stair, slope_rd=True, stair_rd=True, duration=[1, 5])
+    # slope, stair = 0.1, [1,2,3,4,5,6,5,4,3,2,1]
+    # x_new, y_new, y_de, max_time = generate_staircase(slope, stair, slope_rd=False, stair_rd=False, duration=[1,10])
+
+    # slope, stair = [], [1,2,3,4,5,6,5,4,3,2,1]
+    # slope, stair = [], [3,2,1,0,1,2,3,4,5,6,5]
+    # slope, stair = [], [6,5,4,3,2,1,2,3,4,3,2]
+    # x_new, y_new, y_de, max_time = generate_staircase(slope, stair, slope_rd=True, stair_rd=False, duration=[10,60])
+
+    # x_new, y_new, y_de = generate_sinus_stationary("0bl", 0.2, [1, 10])
+    plt.figure(figsize=(88.9 / 25.4, 88.9 / 25.4 / 2))
+    plt.rcParams['font.family'] = 'Times New Roman'
+    plt.tick_params(labelsize=8, pad=0.01, length=2)
+    plt.plot(x_new, y_new, linestyle='-', linewidth=1)
+    plt.plot(x_new, y_de, label='discrete derivative', linestyle='-', linewidth=2)
+    plt.show()
+    # staircase with mixed slopes for testing
+
+
     max_time = 70
     y_true = [0, 0.1, 0.2, 0.4, 1, 4, 5, 5.1, 5.1, 5.1, 5, 1, 5.1, 5, 3, 2, 3, 6, 5.5, 3, 3.1, 3, 2, 3, 5, 4, 1, 3, 4, 3.8, 3.5, 2, 1, 0.5, 0.2, 0]  # Test random1
     y_true = [0, 0.2, 0.4, 1, 3, 4, 5.1, 5, 3, 2, 1, 3, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 4, 3, 2.5, 2, 1, 2, 2.8, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 1, 3, 4, 3.8, 3.5, 2, 1, 0.5, 0.2, 0]  # Test random1
@@ -257,9 +360,9 @@ if __name__ == '__main__':
     plt.xlabel('Time (s)', fontsize=8, labelpad=0.01)
     plt.ylabel('Tendon disp. (mm)', fontsize=8, labelpad=0.01)
     plt.tight_layout()
-    plt.savefig("./figures/random_data/random_{}.png".format(np.random.rand()), dpi=600)
+    # plt.savefig("../figures/random_data/random_{}.png".format(np.random.rand()), dpi=600)
     # plt.savefig("./figures/longPauseInput_DataCollection/{}.png".format(file_name), dpi=600)
-    plt.show()
+    # plt.show()
 
     plt.figure(figsize=(88.9 / 25.4, 88.9 / 25.4 / 1.2))
     plt.rcParams['font.family'] = 'Times New Roman'
@@ -273,7 +376,7 @@ if __name__ == '__main__':
     plt.tight_layout()
     # plt.savefig("./figures/longPauseInput_DataCollection/{}.svg".format(file_name))
     # plt.savefig("./figures/longPauseInput_DataCollection/long_pause_data2.png", dpi=600)
-    plt.show()
+    # plt.show()
 
     label = ["Time", "Tendon1 Disp.", "Tendon2 Disp.", "Motor1 Curr.", "Motor2 Curr.", "Pos x", "Pos y", "Pos z",
              "Angle x", "Angle y", "Angle z"]

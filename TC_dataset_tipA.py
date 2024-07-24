@@ -71,7 +71,7 @@ class Tendon_catheter_Dataset(data.Dataset):
         return {'tendon_disp': tendon_disp, 'tip_A': tip_A, 'tip_D': tip_D, 'freq': freq}
 
     def __getitem__(self, index):
-        tip_name = 'tip_D'
+        tip_name = 'tip_A'
         # tendon_disp = self.data[index][:, [1]]
         # tip_pos = self.data[index][:, 3:6]
         if self.random_sample:

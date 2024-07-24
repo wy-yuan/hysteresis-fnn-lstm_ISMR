@@ -20,7 +20,7 @@ def load_data(data_path, seg, sample_rate=100):
     # resample data using fixed sampling rate
     # sample_rate = 100  # Hz
     frequency = round(1 / (time[-1] / 7), 2)
-    interp_time = np.arange(time[0], time[-1], 1/sample_rate)
+    interp_time = np.arange(10, time[-1], 1/sample_rate)
     tendon_disp_resample = np.interp(interp_time, time, tendon_disp)
     tip_A_resample = np.interp(interp_time, time, tip_A)
 
@@ -29,6 +29,19 @@ def load_data(data_path, seg, sample_rate=100):
     tip_A = np.hstack([-np.ones(seg), tip_A_resample/90])
     freq = np.ones_like(tendon_disp, dtype=np.float32) * frequency
     return {'time': interp_time, 'tendon_disp': tendon_disp, 'tip_A': tip_A, 'freq': freq}
+
+import copy
+def data_filter(data):
+    # 小范围的上升或下降，就把这个值拉到和前一个值相同
+    filtered = copy.deepcopy(data)
+    for i in range(1, data.shape[0]-1):
+        v = abs(data[i]-filtered[i-1])
+        if v < 0.0005:  # v should be larger than 0.0001
+            filtered[i] = filtered[i-1]
+    plt.plot(data)
+    plt.plot(filtered)
+    plt.show()
+    return filtered
 
 def test_LSTM(pt_path, data_path, seg=50, sr=25, forward=True, fq=False, input_dim=1, rm_init=0, numl=2, h=64):
     device = "cuda"
@@ -40,6 +53,8 @@ def test_LSTM(pt_path, data_path, seg=50, sr=25, forward=True, fq=False, input_d
     model.eval()
 
     data = load_data(data_path, seg, sample_rate=sr)
+    data['tip_A'] = data_filter(data["tip_A"])
+
     if forward:
         joints = data['tendon_disp'][:, np.newaxis].astype("float32")
     else:
