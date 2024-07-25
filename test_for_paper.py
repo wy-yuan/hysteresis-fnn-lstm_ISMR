@@ -1155,7 +1155,7 @@ def overplot_models(model_name_list, model_path_name_list, forward, test_file, f
         ax1.tick_params(labelsize=7, pad=0.01, length=2)
         if flag == 0:
             ax1.plot(time-10, gt, linewidth=0.8, label="Experimental data")
-        ax1.plot(time-10, output, "--", linewidth=0.8, label=model_name)
+        ax1.plot(time-10, output, linewidth=0.8, label=model_name)
         # ax1.plot(time, output, linewidth=0.8, label=model_name+" (RMS Error={:.2f}, Maximum Error={:.2f})".format(rmse_me[-1][0],rmse_me[-1][1]))
         ax1.set_xlabel("t (s)", fontsize=7, labelpad=0.01)
         # ax1.set_xlim([-2, 66])
