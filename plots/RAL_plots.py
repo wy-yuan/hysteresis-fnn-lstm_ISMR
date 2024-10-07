@@ -434,7 +434,7 @@ def plot_figure7():
     plt.show()
 
 def plot_theta_error_merged_bestLoss8(version, model_name_list, str_list):
-    plt.figure(figsize=(88.9 / 25.4*2, 88.9 / 25.4 / 1.2))
+    plt.figure(figsize=(88.9 / 25.4*2, 88.9 / 25.4 / 1.3))
     plt.rcParams['font.family'] = 'Times New Roman'
     FS_FP_IS_IP = np.empty((16, 16), dtype='<U10')
     for number, model_type in enumerate(["forward", "inverse"]):
@@ -597,11 +597,189 @@ def plot_theta_error_merged_bestLoss8(version, model_name_list, str_list):
         plt.ylabel("RMS Error / Maximum Error ({})".format(unit))
     plt.tight_layout()
     # plt.savefig("./figures/Data_with_initialization_Sinus12Stair5s/BestLoss_2groups_{}_{}.png".format(model_type, version), dpi=600)
-    plt.savefig("./figures/RAL_plots/Fig8ab.png".format(), dpi=600)
-    plt.savefig("./figures/RAL_plots/Fig8ab.svg".format())
+    plt.savefig("./figures/RAL_plots/Fig8ab_shrink.png".format(), dpi=600)
+    plt.savefig("./figures/RAL_plots/Fig8ab_shrink.svg".format())
     plt.show()
     df_FS_FP_IS_IP = pd.DataFrame(FS_FP_IS_IP)
     df_FS_FP_IS_IP.to_csv("./figures/RAL_plots/WilcoxonSignedRank/FS_FP_IS_IP.csv")
+
+def plot_theta_error_merged_bestLoss8_onesidedtest(version, model_name_list, str_list):
+    plt.figure(figsize=(88.9 / 25.4*2, 88.9 / 25.4 / 1.2))
+    plt.rcParams['font.family'] = 'Times New Roman'
+    FS_FP_IS_IP = np.empty((16, 16), dtype='<U10')
+    for number, model_type in enumerate(["forward", "inverse"]):
+        unit = "degrees" if model_type == "forward" else "mm"
+        rmse_mean_dfs = []
+        rmse_std_dfs = []
+        me_dfs = []
+        old_new_loss = []
+        rmse_array_list = []  # data for paired t-test
+        if version == "v1":
+            for train_data in ["Sinus12", "Stair5s"]:
+                model_list = [model_type + str + train_data for str in str_list]  #
+                for test_data in ["sinus", "stair1_10s"]:
+                    if train_data=="Sinus12" and test_data=="stair1_10s":
+                        continue
+                    if train_data=="Stair5s" and test_data=="sinus":
+                        continue
+                    for model_name in model_list:
+                        rmse_me = np.load("./figures/Data_with_initialization_Sinus12Stair5s/{}/{}_error.npy".format(model_name, test_data))
+                        rmse_me_StdL = np.load("./figures/Data_with_initialization_Sinus12Stair5s/{}StdL/{}_error.npy".format(model_name, test_data))
+                        if np.mean(rmse_me[:, 0]) <= np.mean(rmse_me_StdL[:, 0]):
+                            rmse_mean_dfs.append(np.mean(rmse_me[:, 0]))
+                            rmse_std_dfs.append(np.std(rmse_me[:, 0]))
+                            me_dfs.append(np.max(rmse_me[:, 1]))
+                            old_new_loss.append(0)
+                            rmse_array_list.append(rmse_me[:, 0])
+                        else:
+                            rmse_mean_dfs.append(np.mean(rmse_me_StdL[:, 0]))
+                            rmse_std_dfs.append(np.std(rmse_me_StdL[:, 0]))
+                            me_dfs.append(np.max(rmse_me_StdL[:, 1]))
+                            old_new_loss.append(1)
+                            rmse_array_list.append(rmse_me_StdL[:, 0])
+
+        print(rmse_mean_dfs)
+        print(me_dfs)
+        tick_list = [i + 1 for i in range(len(model_name_list)*2)]
+        plt.subplot(1, 2, number+1)
+        plt.tick_params(labelsize=10, pad=0.1, length=2)
+        symbol_list = ["FNN", "BK", "PI", "LSTM", "GRU", "FNN-HIB", "HB1", "HB2"]
+        symbol_list2 = ["FNN", "Backlash", "PI", "LSTM", "GRU", "FNN-HIB", "HB1: Serial LSTM-Backlash", "HB2: Parallel LSTM-Backlash"]
+
+        # do the paired t-test and show the result in a plot
+        print(model_type)
+
+        m = []
+        for i in range(8):
+            n = []
+            rmse_array1 = rmse_array_list[i]
+            for j in range(8):
+                if i == j:
+                    n.append(np.nan)
+                    if model_type == "forward":
+                        FS_FP_IS_IP[i * 2, j * 2] = "_"
+                    else:
+                        FS_FP_IS_IP[i * 2, j * 2+1] = "_"
+                    continue
+                rmse_array2 = rmse_array_list[j]
+                # t_stat, p_value = stats.ttest_rel(rmse_array1, rmse_array2)
+                statistic, p_value_t = stats.wilcoxon(rmse_array1, rmse_array2)
+                statistic, p_value_g = stats.wilcoxon(rmse_array1, rmse_array2, alternative="greater")
+                statistic, p_value_l = stats.wilcoxon(rmse_array1, rmse_array2, alternative="less")
+                # n.append(round(p_value, 4))
+                # n.append(p_value)
+                n.append(f'{p_value_g:.{3-1}e}')
+                if model_type == "forward":
+                    if p_value_g < 0.05:
+                        FS_FP_IS_IP[i*2, j*2] = ">"
+                    elif p_value_l < 0.05:
+                        FS_FP_IS_IP[i * 2, j * 2] = "<"
+                    else:
+                        if p_value_t < 0.05:
+                            FS_FP_IS_IP[i*2, j*2] = "n"
+                        else:
+                            FS_FP_IS_IP[i * 2, j * 2] = "~"
+                else:
+                    if p_value_g < 0.05:
+                        FS_FP_IS_IP[i*2, j*2+1] = ">"
+                    elif p_value_l < 0.05:
+                        FS_FP_IS_IP[i*2, j*2+1] = "<"
+                    else:
+                        if p_value_t < 0.05:
+                            FS_FP_IS_IP[i * 2, j * 2 + 1] = "n"
+                        else:
+                            FS_FP_IS_IP[i * 2, j * 2 + 1] = "~"
+                # print(f"Paired T-Test: T-statistic: {t_stat}, P-value: {p_value}")
+            m.append(n)
+
+        df = pd.DataFrame(m, columns=symbol_list, index=symbol_list)
+        df.to_csv("./figures/RAL_plots/WilcoxonSignedRank_onesided/{}_sinusoidal.csv".format(model_type))
+
+        m = []
+        for i in range(8, 16):
+            n = []
+            rmse_array1 = rmse_array_list[i]
+            for j in range(8, 16):
+                if i == j:
+                    n.append(np.nan)
+                    if model_type == "forward":
+                        FS_FP_IS_IP[(i-8)*2+1, (j-8)*2] = "_"
+                    else:
+                        FS_FP_IS_IP[(i-8)*2+1, (j-8)*2+1] = "_"
+                    continue
+                rmse_array2 = rmse_array_list[j]
+                # t_stat, p_value = stats.ttest_rel(rmse_array1, rmse_array2)
+                statistic, p_value_t = stats.wilcoxon(rmse_array1, rmse_array2)
+                statistic, p_value_g = stats.wilcoxon(rmse_array1, rmse_array2, alternative="greater")
+                statistic, p_value_l = stats.wilcoxon(rmse_array1, rmse_array2, alternative="less")
+                # print(f"Paired T-Test: T-statistic: {t_stat}, P-value: {p_value}")
+                # n.append(round(p_value, 4))
+                # n.append(p_value)
+                n.append(f'{p_value_g:.{3-1}e}')
+                if model_type == "forward":
+                    if p_value_g < 0.05:
+                        FS_FP_IS_IP[(i-8)*2+1, (j-8)*2] = ">"
+                    elif p_value_l < 0.05:
+                        FS_FP_IS_IP[(i-8)*2+1, (j-8)*2] = "<"
+                    else:
+                        if p_value_t < 0.05:
+                            FS_FP_IS_IP[(i - 8) * 2 + 1, (j - 8) * 2] = "n"
+                        else:
+                            FS_FP_IS_IP[(i-8)*2+1, (j-8)*2] = "~"
+                else:
+                    if p_value_g < 0.05:
+                        FS_FP_IS_IP[(i-8)*2+1, (j-8)*2+1] = ">"
+                    elif p_value_l < 0.05:
+                        FS_FP_IS_IP[(i-8)*2+1, (j-8)*2+1] = "<"
+                    else:
+                        if p_value_t < 0.05:
+                            FS_FP_IS_IP[(i-8)*2+1, (j-8)*2+1] = "n"
+                        else:
+                            FS_FP_IS_IP[(i-8)*2+1, (j-8)*2+1] = "~"
+
+            m.append(n)
+        df = pd.DataFrame(m, columns=symbol_list, index=symbol_list)
+        df.to_csv("./figures/RAL_plots/WilcoxonSignedRank_onesided/{}_point_to_point.csv".format(model_type))
+
+        # show the maximum value and the model name
+        if model_type == "forward":
+            offset = 0.12
+        else:
+            offset = 0.012
+        for i in range(len(me_dfs)):
+            plt.text(tick_list[i], rmse_mean_dfs[i] + rmse_std_dfs[i], f'{me_dfs[i]:.2f}', ha='center', va='bottom', fontsize=7)
+            if old_new_loss[i] == 1:
+                plt.text(tick_list[i], rmse_mean_dfs[i] - rmse_std_dfs[i]-offset, symbol_list[i%8], ha='center', va='bottom', fontsize=6) #, fontweight='bold')
+            else:
+                plt.text(tick_list[i], rmse_mean_dfs[i] - rmse_std_dfs[i] - offset, symbol_list[i % 8], ha='center', va='bottom', fontsize=6)
+        # plt.xticks(tick_list, model_name_list, rotation=60)
+        # plt the error bar
+        if version == "v1":
+            # fmt_list = ['b'+f for f in ['o', '^', 'p', 'h', '*', '+', 'x']]
+            color_list = ['brown', 'red', 'orange', 'green', 'blue', 'k', 'purple', 'pink']
+            for i in range(0, 8):
+                for j in range(0, 2):
+                    if j == 0:
+                        plt.errorbar(tick_list[i+8*j], rmse_mean_dfs[i+8*j], yerr=rmse_std_dfs[i+8*j], fmt="o", color=color_list[i], label=symbol_list2[i], capsize=5) #color=color_list[i],
+                    else:
+                        plt.errorbar(tick_list[i+8*j], rmse_mean_dfs[i+8*j], yerr=rmse_std_dfs[i+8*j], fmt="o", color=color_list[i], capsize=5) #color=color_list[i],
+            for x in np.arange(1, 2)*8+0.5:
+                plt.axvline(x, linestyle='--', color='k', linewidth=0.5)
+            plt.xticks(np.arange(0, 2) * 8 + 4, ["Sinusoids", "Point-to-point"])
+
+        # if model_type == "forward":
+        #     plt.ylim([0, 3.2])
+        # else:
+        #     plt.ylim([0, 0.37])
+        # plt.legend(fontsize=8, frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.15))
+        plt.ylabel("RMS Error / Maximum Error ({})".format(unit))
+    plt.tight_layout()
+    # plt.savefig("./figures/Data_with_initialization_Sinus12Stair5s/BestLoss_2groups_{}_{}.png".format(model_type, version), dpi=600)
+    # plt.savefig("./figures/RAL_plots/Fig8ab.png".format(), dpi=600)
+    # plt.savefig("./figures/RAL_plots/Fig8ab.svg".format())
+    plt.show()
+    df_FS_FP_IS_IP = pd.DataFrame(FS_FP_IS_IP)
+    df_FS_FP_IS_IP.to_csv("./figures/RAL_plots/WilcoxonSignedRank_onesided/FS_FP_IS_IP.csv")
 
 def plot_Y_error_merged_BestLoss8(version, model_name_list, str_list):
     plt.figure(figsize=(88.9 / 25.4 * 2, 88.9 / 25.4 / 1.2))
@@ -700,6 +878,7 @@ def plot_figure8():
                        "LSTM-Backlash-sum"]  # "LSTM-Backlash-sum"
     str_list = ["_FEED_", "_bkl_", "_PI_", "_LSTM_", "_GRU_", "_FNN_", "_L_bl_", "_sum_"]
     plot_theta_error_merged_bestLoss8(version, model_name_list, str_list)
+    # plot_theta_error_merged_bestLoss8_onesidedtest(version, model_name_list, str_list)
     # plot_Y_error_merged_BestLoss8(version, model_name_list, str_list)
 
 def plot_figure9():
