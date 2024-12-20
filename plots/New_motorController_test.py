@@ -50,20 +50,30 @@ if __name__ == '__main__':
     # file = r"D:\yuan\Dropbox (BCH)\robot debugging experiments\motor tuning\motor_tuning_trial1_P0_271I0_024D000_speed3_withrobot.csv"
     # file = r"D:\yuan\Dropbox (BCH)\robot debugging experiments\motor tuning\motor_tuning_trial1_P0_271I0_024D000_speed6_withrobot.csv"
 
+    file = r"D:\yuan\projects\roboteq\out\recorded_data\sine_command_data_MXRPM50_05Hz.csv"
+    file = r"D:\yuan\projects\roboteq\out\recorded_data\speedPID5_10_0_posPID05_20_0\sine_command_data_05Hz.csv"
+    file = r"D:\yuan\projects\roboteq\out\recorded_data\speedPID10_10_0_posPID03_10_0\sine_command_data_01Hz.csv"
+    file = r"D:\yuan\projects\roboteq\out\recorded_data\speedPID10_10_0_posPID03_10_0\sine_command_data_01Hz_amps.csv"
+    file = r"D:\yuan\projects\roboteq\out\build\x64-debug\sine_command_data.csv"
 
     df = pd.read_csv(file)
     # print(df)
-
+    #
     time = np.array(df["time"])
     ros_joint_pos = np.array(df["position"])
     ros_joint_vel = np.array(df["velocity"])
-    ros_joint_cur = np.array(df["current"])
+    desired_p = np.array(df["desired_position"])
+    command = np.array(df["command"])
+    amps = np.array(df["amps"])
+    # ros_joint_cur = np.array(df["current"])
 
     # actual_vel = np.ones_like(time) * 2
     time = time - time[0]
     flag = np.ones_like(time)
     flag[time > 10] = 0
-    actual_vel = 3*2*np.pi*0.1*np.cos(2*np.pi*0.1*time-np.pi/2)*7420/80.42 * flag
+    actual_vel = command
+    # actual_vel = 10*2*np.pi*0.5*np.cos(2*np.pi*0.5*time-np.pi/2) * flag
+    # actual_vel = 3*2*np.pi*0.1*np.cos(2*np.pi*0.1*time-np.pi/2)*7420/80.42 * flag
     # actual_vel = 3*2*np.pi*0.1*np.cos(2*np.pi*0.1*time-np.pi/2)*979/80.42 * flag
     # actual_vel = 20*2*np.pi*0.1*np.cos(2*np.pi*0.1*time-np.pi/2)*832/80.42 * flag
     actual_pos = np.cumsum(actual_vel * (np.hstack([time[1:], time[-1]]) - time))
@@ -74,25 +84,37 @@ if __name__ == '__main__':
     plt.rcParams['font.family'] = 'Times New Roman'
     fig, ax1 = plt.subplots(figsize=(88.9 / 25.4 * 4, 88.9 / 25.4*2))
     ax1.tick_params(labelsize=font_size, pad=0.01, length=2)
-    ax1.plot(time, ros_joint_vel)
-    ax1.plot(time, actual_vel)
+    ax1.plot(time, ros_joint_vel, label="vel")
+    ax1.plot(time, actual_vel, label="desired_vel")
     # ax1.plot(ros_joint_vel)
     ax1.set_xlabel('Time (s)', fontsize=font_size)
-    ax1.set_ylabel('Velocity (count/s)', fontsize=font_size)
+    # ax1.set_ylabel('Velocity (count/s)', fontsize=font_size)
+    ax1.set_ylabel('Velocity (RPM)', fontsize=font_size)
     # ax1.grid()
+    ax1.legend(loc="upper left")
+
+    # ax2 = ax1.twinx()
+    # ax2.tick_params(labelsize=font_size, pad=0.01, length=2)
+    # ax2.plot(time, actual_pos, 'r')
+    # # ax2.plot(time, (ros_joint_pos[:, motor] - ros_joint_pos[0, motor]), 'g')
+    # # ax2.plot(time, actual_pos-(ros_joint_pos[:, motor] - ros_joint_pos[0, motor]), 'y')
+    # ax2.plot(time, (ros_joint_pos - ros_joint_pos[0]), 'g')
+    # # ax2.plot(time, actual_pos - (ros_joint_pos - ros_joint_pos[0]), 'y')
+    # ax2.plot(time, actual_pos_from_command, 'purple')
+    # # ax2.plot(time, ros_joint_cur, 'r')
+    # # ax2.plot(ros_joint_pos, 'r')
+    # ax2.tick_params('y', colors='g')
+    # ax2.set_ylabel('Position (count)', fontsize=font_size)
 
     ax2 = ax1.twinx()
     ax2.tick_params(labelsize=font_size, pad=0.01, length=2)
-    ax2.plot(time, actual_pos, 'r')
-    # ax2.plot(time, (ros_joint_pos[:, motor] - ros_joint_pos[0, motor]), 'g')
-    # ax2.plot(time, actual_pos-(ros_joint_pos[:, motor] - ros_joint_pos[0, motor]), 'y')
-    ax2.plot(time, (ros_joint_pos - ros_joint_pos[0]), 'g')
-    ax2.plot(time, actual_pos - (ros_joint_pos - ros_joint_pos[0]), 'y')
-    ax2.plot(time, actual_pos_from_command, 'purple')
-    # ax2.plot(time, ros_joint_cur, 'r')
-    # ax2.plot(ros_joint_pos, 'r')
+    ax2.plot(time, desired_p, 'r', label="desired_pos")
+    ax2.plot(time, ros_joint_pos, 'g', label="pos")
+    ax2.plot(time, amps * 1000, 'b', label="current (mA)")
+    # ax2.plot(time, actual_pos_from_command*7420/60, 'purple')
     ax2.tick_params('y', colors='g')
     ax2.set_ylabel('Position (count)', fontsize=font_size)
+    plt.legend()
 
     # plt.savefig(r"D:\yuan\Dropbox (BCH)\robot debugging experiments\plots\{}.png".format(file.split(".")[0]),dpi=600)
     plt.savefig(r"{}.png".format(file.split(".")[0]), dpi=600)

@@ -274,7 +274,7 @@ def plot_figure5():
         tendon_disp = data[:, 1]
         tip_A = data[:, 8]
         current = data[:, 3]
-        force = current/1000/0.6*6.56
+        force = current/100/0.6*6.56    # current is in cA
         plt.subplot(1, 3, 3)
         plt.tick_params(labelsize=8, pad=0.01, length=2)
         plt.plot(tendon_disp, tip_A, linewidth=0.8, label="Trial{}".format(i))
@@ -317,15 +317,15 @@ def plot_figure5():
         plt.ylim([15, 80])
 
         current = data["current"]
-        force = current / 1000 / 0.6 * 6.56
+        force = current / 100 / 0.6 * 6.56 # current is in cA
         plt.subplot(1, 3, 2)
         plt.tick_params(labelsize=8, pad=0.01, length=2)
         plt.plot(force, tip_A, linewidth=0.8, label="0.{} Hz".format(i))
         plt.xlabel("Tendon tension (N)", fontsize=8, labelpad=0.5)
         plt.ylabel("Tip angle (degrees)", fontsize=8, labelpad=0.5)
         plt.legend(fontsize=7, frameon=False, ncol=1, handlelength=1)
-        plt.xlim([-0.2, 2.7])
-        plt.xticks([0, 0.5, 1, 1.5, 2, 2.5])
+        plt.xlim([-2, 27])
+        plt.xticks([0, 5, 10, 15, 20, 25])
         plt.ylim([15, 80])
 
     plt.tight_layout()
@@ -893,7 +893,7 @@ if __name__ == '__main__':
     #  (b) Bending angle vs tendon force (5 frequencies),
     #  (c) Bending angle vs tendon displacement (5 trials at same frequency).
     #  Parts (a) and (c) should use same vertical scale.
-    # plot_figure5()
+    plot_figure5()
 
     # Fig. 6: (a) Alternative mappings in block diagram form, (b) Backlash model map to X – overplot of direct and two-part maps.
     #
@@ -905,7 +905,7 @@ if __name__ == '__main__':
     # plot_figure7()
 
     # Fig.8
-    plot_figure8()
+    # plot_figure8()
 
     # Fig.9
     # plot_figure9()
